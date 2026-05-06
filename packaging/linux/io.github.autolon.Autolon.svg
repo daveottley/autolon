@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Based on SVG Repo "Mouse Pointer Click" icon, CC0 License:
+     https://www.svgrepo.com/svg/389320/mouse-pointer-click -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="24" fill="#111827"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M47 42l28 67 10-30 30-10-68-27z" fill="#f8fafc" stroke="#020617" stroke-width="8"/>
+    <path d="M85 80l24 24" stroke="#f8fafc" stroke-width="10"/>
+    <path d="M85 80l24 24" stroke="#2563eb" stroke-width="5"/>
+    <path d="M32 15l6 22M21 47l-22-6M69 20L53 36M37 69L21 85" stroke="#f59e0b" stroke-width="9"/>
+  </g>
+</svg>

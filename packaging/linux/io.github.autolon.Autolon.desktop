@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Autolon
+GenericName=Input Automation Utility
+Comment=Local autoclicker and input automation controller
+Exec=autolon gui
+Icon=io.github.autolon.Autolon
+Terminal=false
+Categories=Utility;
+StartupNotify=false
+StartupWMClass=io.github.autolon.Autolon

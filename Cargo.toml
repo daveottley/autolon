@@ -1,0 +1,27 @@
+[package]
+name = "autolon"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+description = "Native Linux autoclicker and local input automation controller"
+
+[dependencies]
+anyhow = "1.0"
+ashpd = { version = "0.13.10", default-features = false, features = ["tokio", "global_shortcuts"] }
+clap = { version = "4.5", features = ["derive"] }
+dirs = "6.0"
+futures-util = "0.3"
+gtk4 = "0.10"
+ksni = "0.3.4"
+libc = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tokio = { version = "1.48", features = ["rt", "macros", "time"] }
+toml = "0.9"
+zbus = { version = "5.15", features = ["blocking-api"] }
+
+[profile.release]
+lto = "thin"
+strip = "symbols"

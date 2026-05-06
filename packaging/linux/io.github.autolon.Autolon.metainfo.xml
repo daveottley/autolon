@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.autolon.Autolon</id>
+  <name>Autolon</name>
+  <summary>Local autoclicker and input automation controller</summary>
+  <description>
+    <p>Autolon provides a native Linux daemon, CLI, tray menu, and settings window for transparent local autoclicker control.</p>
+  </description>
+  <url type="homepage">https://github.com/autolon/autolon</url>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <launchable type="desktop-id">io.github.autolon.Autolon.desktop</launchable>
+</component>

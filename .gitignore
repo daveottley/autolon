@@ -1,0 +1,5 @@
+target/
+packaging/arch/*.tar.*
+packaging/arch/*.pkg.tar.*
+packaging/arch/pkg/
+packaging/arch/src/

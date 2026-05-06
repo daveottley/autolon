@@ -1,0 +1,4 @@
+# Autolon needs to read/grab physical keyboard events and emit virtual mouse/keyboard
+# events for compositor-independent Wayland hotkeys and clicking.
+SUBSYSTEM=="misc", KERNEL=="uinput", TAG+="uaccess", GROUP="autolon-input", MODE="0660", OPTIONS+="static_node=uinput"
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="uaccess", GROUP="autolon-input", MODE="0660"

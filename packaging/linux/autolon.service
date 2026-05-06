@@ -1,0 +1,10 @@
+[Unit]
+Description=Autolon daemon
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/autolon daemon
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
