@@ -1,5 +1,10 @@
 target/
+dist/
 packaging/arch/*.tar.*
 packaging/arch/*.pkg.tar.*
 packaging/arch/pkg/
 packaging/arch/src/
+packaging/aur/*/*.tar.*
+packaging/aur/*/*.pkg.tar.*
+packaging/aur/*/pkg/
+packaging/aur/*/src/
