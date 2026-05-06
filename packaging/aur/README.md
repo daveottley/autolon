@@ -49,12 +49,25 @@ One-time setup:
 ```sh
 mkdir -p ~/.ssh
 ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
-git clone ssh://aur@aur.archlinux.org/autolon-bin.git /tmp/autolon-bin-aur
+cat ~/.ssh/id_ed25519.pub
 ```
 
-Publish:
+Add that public key to your AUR account:
+
+```text
+https://aur.archlinux.org/account
+```
+
+Then publish:
 
 ```sh
+./packaging/aur/publish-autolon-bin.sh
+```
+
+Manual publish equivalent:
+
+```sh
+git clone ssh://aur@aur.archlinux.org/autolon-bin.git /tmp/autolon-bin-aur
 cp packaging/aur/autolon-bin/PKGBUILD \
    packaging/aur/autolon-bin/.SRCINFO \
    packaging/aur/autolon-bin/autolon.install \
