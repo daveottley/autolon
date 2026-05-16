@@ -3,8 +3,8 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../.." && pwd)"
-pkgdir="$repo_root/packaging/aur/autolon-bin"
-aur_workdir="${1:-/tmp/autolon-bin-aur}"
+pkgdir="$repo_root/packaging/aur/autolon"
+aur_workdir="${1:-/tmp/autolon-aur}"
 
 aur_auth_output="$(ssh -o BatchMode=yes -T aur@aur.archlinux.org 2>&1 || true)"
 grep -Eq 'Welcome|Hi|successfully authenticated' <<<"$aur_auth_output" || {
@@ -22,7 +22,7 @@ EOF
 }
 
 rm -rf "$aur_workdir"
-git clone ssh://aur@aur.archlinux.org/autolon-bin.git "$aur_workdir"
+git clone ssh://aur@aur.archlinux.org/autolon.git "$aur_workdir"
 git -C "$aur_workdir" checkout -B master
 cp "$pkgdir/PKGBUILD" "$pkgdir/.SRCINFO" "$pkgdir/autolon.install" "$aur_workdir/"
 
@@ -39,11 +39,8 @@ git commit -m "Release $pkgver-$pkgrel"
 git push origin master
 
 cat <<'EOF'
-Published autolon-bin to AUR.
+Published autolon to AUR.
 
-Fresh install:
-  yay -S autolon-bin
-
-Updates:
-  yay -Syu
+Source install:
+  yay -S autolon
 EOF

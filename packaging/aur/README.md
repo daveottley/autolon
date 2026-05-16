@@ -1,9 +1,20 @@
 # AUR Publishing
 
-Autolon publishes to AUR as `autolon-bin` first. This gives non-technical users the simplest install path:
+Autolon publishes two AUR packages:
+
+- `autolon-bin`: downloads the portable binary archive from GitHub Releases.
+- `autolon`: builds from source on the installing machine with native CPU optimization.
+
+The binary package gives non-technical users the simplest install path:
 
 ```sh
 yay -S autolon-bin
+```
+
+The source package is slower to install, but compiles for the local CPU:
+
+```sh
+yay -S autolon
 ```
 
 Later updates are picked up with:
@@ -14,26 +25,37 @@ yay -Syu
 
 ## Release Flow
 
-From the repo root:
+Binary archives are built by GitHub Actions when a `v*` tag is pushed. The workflow uses the official Rust toolchain and refuses to publish an archive if the resulting binary contains AVX/AVX-512-family instructions that would make it unsafe as a portable `x86_64` build.
+
+Manual local archive builds are still available from the repo root:
 
 ```sh
 ./packaging/release/build-binary-archive.sh
 ```
 
-Upload the generated files from `dist/` to a GitHub release named `v0.1.0`:
+For normal releases, tag and push:
 
 ```sh
-gh release create v0.1.0 \
-  dist/autolon-0.1.0-x86_64.tar.zst \
-  dist/autolon-0.1.0-x86_64.tar.zst.sha256 \
-  --title "Autolon v0.1.0" \
-  --notes "Initial native Linux Wayland-first autoclicker release."
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
-Then update and test the AUR package:
+After GitHub Actions publishes the release assets, update and test the binary AUR package:
 
 ```sh
 cd packaging/aur/autolon-bin
+updpkgsums
+makepkg --printsrcinfo > .SRCINFO
+makepkg -si
+autolon status
+autolon permissions status
+autolon verify
+```
+
+Then update and test the source AUR package:
+
+```sh
+cd packaging/aur/autolon
 updpkgsums
 makepkg --printsrcinfo > .SRCINFO
 makepkg -si
@@ -58,10 +80,11 @@ Add that public key to your AUR account:
 https://aur.archlinux.org/account
 ```
 
-Then publish:
+Then publish both packages:
 
 ```sh
 ./packaging/aur/publish-autolon-bin.sh
+./packaging/aur/publish-autolon.sh
 ```
 
 Manual publish equivalent:
@@ -74,7 +97,7 @@ cp packaging/aur/autolon-bin/PKGBUILD \
    /tmp/autolon-bin-aur/
 cd /tmp/autolon-bin-aur
 git add PKGBUILD .SRCINFO autolon.install
-git commit -m "Release 0.1.0-1"
+git commit -m "Release 0.1.1-1"
 git push
 ```
 

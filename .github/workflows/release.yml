@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  binary-archive:
+    name: Build portable binary archive
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils \
+            libgtk-4-dev \
+            libxtst-dev \
+            pkg-config \
+            zstd
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify tag matches Cargo version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build release archive
+        env:
+          AUTOLON_RELEASE_RUSTFLAGS: "-C target-cpu=x86-64"
+        run: ./packaging/release/build-binary-archive.sh
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          archive="dist/autolon-${version}-x86_64.tar.zst"
+          checksum="${archive}.sha256"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "$archive" "$checksum" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "$archive" "$checksum" \
+              --title "Autolon ${GITHUB_REF_NAME}" \
+              --notes "Portable x86_64 Autolon binary release."
+          fi
