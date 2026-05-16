@@ -789,9 +789,7 @@ fn active_indicator(state: &UiState) -> Option<(u8, u64)> {
         return None;
     }
     if state.config.global_autoclicker_enabled {
-        return state
-            .global_slot
-            .map(|slot| (slot.slot_id, slot.interval_ms));
+        return None;
     }
     let slot_id = state.local_slot?;
     let interval_ms = state.config.slot(slot_id).ok()?.interval_ms;

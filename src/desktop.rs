@@ -67,124 +67,6 @@ const SYSUSERS: &str = "g autolon-input - - -\n";
 
 const KWIN_INDICATOR_ID: &str = "autolonindicator";
 
-const KWIN_INDICATOR_METADATA: &str = r#"{
-    "KPackageStructure": "KWin/Script",
-    "KPlugin": {
-        "Authors": [
-            {
-                "Name": "Autolon"
-            }
-        ],
-        "Category": "Accessibility",
-        "Description": "Shows Autolon's active autoclick speed at the global cursor",
-        "EnabledByDefault": false,
-        "Id": "autolonindicator",
-        "License": "MIT",
-        "Name": "Autolon Cursor Indicator"
-    },
-    "X-Plasma-API": "declarativescript",
-    "X-Plasma-MainScript": "code/main.qml"
-}
-"#;
-
-const KWIN_INDICATOR_QML: &str = r##"import QtQuick
-import QtQuick.Window
-import org.kde.kwin
-
-Window {
-    id: root
-    property bool indicatorRunning: false
-    property int intervalMs: 0
-    property var color: [0.45, 0.32, 0.95]
-
-    x: Workspace.virtualScreenGeometry.x
-    y: Workspace.virtualScreenGeometry.y
-    width: Workspace.virtualScreenGeometry.width
-    height: Workspace.virtualScreenGeometry.height
-    color: "transparent"
-    visible: indicatorRunning
-    flags: Qt.X11BypassWindowManagerHint | Qt.WindowTransparentForInput
-
-    function refreshState() {
-        stateCall.call();
-    }
-
-    DBusCall {
-        id: stateCall
-        service: "io.github.autolon.Autolon.Indicator"
-        path: "/io/github/autolon/Autolon/Indicator"
-        dbusInterface: "io.github.autolon.Autolon.Indicator"
-        method: "StateJson"
-        onFinished: function(returnValue) {
-            try {
-                    var state = JSON.parse(returnValue[0]);
-                    root.indicatorRunning = state.running === true;
-                    root.intervalMs = state.interval_ms || 0;
-                    root.color = state.color || [0.45, 0.32, 0.95];
-                } catch (error) {
-                    root.indicatorRunning = false;
-                }
-            }
-            onFailed: function() {
-            root.indicatorRunning = false;
-        }
-    }
-
-    Timer {
-        interval: 40
-        repeat: true
-        running: true
-        onTriggered: root.refreshState()
-    }
-
-    Canvas {
-        id: canvas
-        anchors.fill: parent
-        onPaint: {
-            var ctx = getContext("2d");
-            ctx.clearRect(0, 0, width, height);
-            if (!root.indicatorRunning) {
-                return;
-            }
-
-            var cursor = Workspace.cursorPos;
-            var screenGeometry = Workspace.virtualScreenGeometry;
-            var x = cursor.x - screenGeometry.x;
-            var y = cursor.y - screenGeometry.y;
-            if (x < -24 || y < -24 || x > width + 24 || y > height + 24) {
-                return;
-            }
-
-            var radius = 13;
-            x = Math.max(radius, Math.min(width - radius, x));
-            y = Math.max(radius, Math.min(height - radius, y));
-            var red = root.color[0];
-            var green = root.color[1];
-            var blue = root.color[2];
-            var stroke = "rgba(" + Math.round(red * 255) + "," + Math.round(green * 255) + "," + Math.round(blue * 255) + ",0.72)";
-            var text = "rgba(" + Math.round(red * 255) + "," + Math.round(green * 255) + "," + Math.round(blue * 255) + ",0.86)";
-
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = stroke;
-            ctx.beginPath();
-            ctx.arc(x, y, radius, 0, Math.PI * 2, false);
-            ctx.stroke();
-
-            ctx.fillStyle = text;
-            ctx.font = "bold 10px sans-serif";
-            ctx.fillText(String(root.intervalMs), x + 16, y + 4);
-        }
-
-        Timer {
-            interval: 16
-            repeat: true
-            running: root.indicatorRunning
-            onTriggered: canvas.requestPaint()
-        }
-    }
-}
-"##;
-
 pub fn set_autostart(enable: bool) -> Result<()> {
     let path = dirs::config_dir()
         .context("could not determine XDG config directory")?
@@ -222,7 +104,10 @@ pub fn install_user_files() -> Result<()> {
         0o644,
     )?;
     install_raster_icons(&icon_root)?;
-    install_kwin_indicator(&data)?;
+    let _ = unload_legacy_kwin_effect();
+    let _ = unload_kwin_indicator();
+    remove_dir_if_exists(&data.join("kwin/effects").join(KWIN_INDICATOR_ID))?;
+    remove_dir_if_exists(&data.join("kwin/scripts").join(KWIN_INDICATOR_ID))?;
     refresh_icon_cache(&icon_root);
     Ok(())
 }
@@ -269,22 +154,6 @@ pub fn install_system_files(prefix: String) -> Result<()> {
     write_file(
         &prefix.join("lib/sysusers.d").join("autolon.conf"),
         SYSUSERS,
-        0o644,
-    )?;
-    write_file(
-        &prefix
-            .join("share/kwin/scripts")
-            .join(KWIN_INDICATOR_ID)
-            .join("metadata.json"),
-        KWIN_INDICATOR_METADATA,
-        0o644,
-    )?;
-    write_file(
-        &prefix
-            .join("share/kwin/scripts")
-            .join(KWIN_INDICATOR_ID)
-            .join("contents/code/main.qml"),
-        KWIN_INDICATOR_QML,
         0o644,
     )?;
     Ok(())
@@ -345,53 +214,6 @@ fn refresh_icon_cache(icon_root: &Path) {
         .arg("-t")
         .arg("-f")
         .arg(icon_root)
-        .status();
-}
-
-fn install_kwin_indicator(data: &Path) -> Result<()> {
-    unload_legacy_kwin_effect()?;
-    remove_dir_if_exists(&data.join("kwin/effects").join(KWIN_INDICATOR_ID))?;
-
-    let script_root = data.join("kwin/scripts").join(KWIN_INDICATOR_ID);
-    write_file(
-        &script_root.join("metadata.json"),
-        KWIN_INDICATOR_METADATA,
-        0o644,
-    )?;
-    write_file(
-        &script_root.join("contents/code/main.qml"),
-        KWIN_INDICATOR_QML,
-        0o644,
-    )?;
-    load_kwin_indicator(&script_root);
-    Ok(())
-}
-
-fn load_kwin_indicator(script_root: &Path) {
-    set_kwin_script_enabled(true);
-    reconfigure_kwin();
-    let _ = Command::new("qdbus6")
-        .args([
-            "org.kde.KWin",
-            "/Scripting",
-            "org.kde.kwin.Scripting.unloadScript",
-            KWIN_INDICATOR_ID,
-        ])
-        .status();
-    let _ = Command::new("qdbus6")
-        .args([
-            "org.kde.KWin",
-            "/Scripting",
-            "org.kde.kwin.Scripting.loadDeclarativeScript",
-            &script_root
-                .join("contents/code/main.qml")
-                .display()
-                .to_string(),
-            KWIN_INDICATOR_ID,
-        ])
-        .status();
-    let _ = Command::new("qdbus6")
-        .args(["org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting.start"])
         .status();
 }
 
