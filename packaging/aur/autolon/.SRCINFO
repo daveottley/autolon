@@ -13,6 +13,6 @@ pkgbase = autolon
 	depends = libxtst
 	conflicts = autolon-bin
 	source = autolon-0.1.3.tar.gz::https://github.com/daveottley/autolon/archive/refs/tags/v0.1.3.tar.gz
-	sha256sums = SKIP
+	sha256sums = 394d79ade4154443221c8ba74d593e26dcbf2fcd22db8447c9144182a84efea3
 
 pkgname = autolon
