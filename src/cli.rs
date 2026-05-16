@@ -13,6 +13,7 @@ const UDEV_RULE: &str = concat!(
 
 #[derive(Debug, Parser)]
 #[command(name = "autolon")]
+#[command(version)]
 #[command(about = "Native Linux autoclicker and local input automation controller")]
 pub struct Args {
     #[command(subcommand)]
@@ -590,5 +591,19 @@ fn test_global_hotkey(seconds: u64) -> Result<()> {
         Ok(())
     } else {
         bail!("physical F6 did not reach Autolon within {seconds}s")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::error::ErrorKind;
+
+    #[test]
+    fn exposes_version_flag() {
+        let err = Args::try_parse_from(["autolon", "--version"]).unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::DisplayVersion);
+        assert!(err.to_string().contains(env!("CARGO_PKG_VERSION")));
     }
 }
