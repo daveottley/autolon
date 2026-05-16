@@ -36,8 +36,8 @@ Manual local archive builds are still available from the repo root:
 For normal releases, tag and push:
 
 ```sh
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 After GitHub Actions publishes the release assets, update and test the binary AUR package:
@@ -97,7 +97,7 @@ cp packaging/aur/autolon-bin/PKGBUILD \
    /tmp/autolon-bin-aur/
 cd /tmp/autolon-bin-aur
 git add PKGBUILD .SRCINFO autolon.install
-git commit -m "Release 0.1.1-1"
+git commit -m "Release 0.1.2-1"
 git push
 ```
 

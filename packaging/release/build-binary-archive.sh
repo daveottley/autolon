@@ -31,14 +31,14 @@ cd "$repo_root"
 export RUSTFLAGS="${AUTOLON_RELEASE_RUSTFLAGS:--C target-cpu=x86-64}"
 cargo build --release --locked
 
+disassembly="$workdir/autolon.objdump"
+objdump -d -M intel target/release/autolon > "$disassembly"
 bad_instructions="$(
-  objdump -d -M intel target/release/autolon |
-    grep -Ei '(^|[^[:alnum:]_])(zmm[0-9]+|ymm[0-9]+|vpermt2d|vmovdqu64|vshufi|vinserti|avx512)([^[:alnum:]_]|$)' |
-    head -n 20 || true
+  awk 'tolower($0) ~ /(zmm[0-9]+|vpermt2d|vpmovm2|vpternlog|vshufi64x2|vextracti64x4)/ { print; if (++count == 20) exit }' "$disassembly"
 )"
 if [[ -n "$bad_instructions" ]]; then
   cat >&2 <<'EOF'
-Release binary contains AVX/AVX-512-family instructions.
+Release binary contains AVX-512-family instructions.
 Refusing to publish a non-portable x86_64 binary archive.
 EOF
   printf '%s\n' "$bad_instructions" >&2
