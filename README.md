@@ -194,7 +194,7 @@ Then log out and back in.
 
 Autolon includes an optional global mouse overlay that shows when autoclicking is active and displays the current speed.
 
-This feature is experimental and KDE-focused. It is disabled by default because global overlay behavior can vary across Wayland compositors. The packaged installs depend on `qt6-tools` for the KDE D-Bus bridge used by the overlay. The local test canvas always remains available for safe testing inside the settings window.
+This feature is experimental and KDE-focused. It is enabled by default and can be disabled in Settings if global overlay behavior is not stable on your compositor. The packaged installs depend on `qt6-tools` for the KDE D-Bus bridge used by the overlay. The local test canvas always remains available for safe testing inside the settings window.
 
 ## Desktop Integration
 

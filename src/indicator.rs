@@ -336,12 +336,72 @@ fn kwin_bridge_script_path() -> PathBuf {
 }
 
 const KWIN_CURSOR_BRIDGE_SCRIPT: &str = r#"print("autolon cursor overlay bridge start");
-function publishCursor() {
-    var cursor = workspace.cursorPos;
-    callDBus("io.github.autolon.Autolon.Indicator", "/io/github/autolon/Autolon/Indicator", "io.github.autolon.Autolon.Indicator", "UpdateCursor", cursor.x, cursor.y);
+
+var autolonLastCursorX = null;
+var autolonLastCursorY = null;
+var autolonCursorPollTimer = null;
+var autolonCursorIntervalId = null;
+
+function autolonReadCoordinate(value) {
+    if (typeof value === "function") {
+        return Math.round(value());
+    }
+    return Math.round(value);
 }
-workspace.cursorPosChanged.connect(publishCursor);
-publishCursor();
+
+function autolonReadCursor() {
+    var cursor = workspace.cursorPos;
+    if (typeof cursor === "function") {
+        cursor = cursor();
+    }
+    return cursor;
+}
+
+function autolonPublishCursor(force) {
+    var cursor = autolonReadCursor();
+    if (!cursor) {
+        return;
+    }
+
+    var x = autolonReadCoordinate(cursor.x);
+    var y = autolonReadCoordinate(cursor.y);
+    if (isNaN(x) || isNaN(y)) {
+        return;
+    }
+
+    if (!force && x === autolonLastCursorX && y === autolonLastCursorY) {
+        return;
+    }
+
+    callDBus("io.github.autolon.Autolon.Indicator", "/io/github/autolon/Autolon/Indicator", "io.github.autolon.Autolon.Indicator", "UpdateCursor", x, y);
+    autolonLastCursorX = x;
+    autolonLastCursorY = y;
+}
+
+var autolonCursorSignalHandler = function() {
+    autolonPublishCursor(true);
+};
+
+workspace.cursorPosChanged.connect(autolonCursorSignalHandler);
+
+if (typeof setInterval === "function") {
+    autolonCursorIntervalId = setInterval(function() {
+        autolonPublishCursor(false);
+    }, 33);
+} else {
+    try {
+        autolonCursorPollTimer = new QTimer();
+        autolonCursorPollTimer.interval = 33;
+        autolonCursorPollTimer.timeout.connect(function() {
+            autolonPublishCursor(false);
+        });
+        autolonCursorPollTimer.start();
+    } catch (err) {
+        print("autolon cursor overlay bridge timer unavailable: " + err);
+    }
+}
+
+autolonPublishCursor(true);
 "#;
 
 fn spawn_overlay(state: Arc<Mutex<IndicatorState>>) {

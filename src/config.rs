@@ -193,7 +193,7 @@ impl Default for Config {
             },
             global_autoclicker_enabled: true,
             global_hotkey_debounce_ms: DEFAULT_GLOBAL_HOTKEY_DEBOUNCE_MS,
-            display_global_mouse_overlay: false,
+            display_global_mouse_overlay: true,
             global_mouse_overlay_font_size_pt: DEFAULT_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT,
             backend: BackendPreference::Auto,
             slots: Slots {
