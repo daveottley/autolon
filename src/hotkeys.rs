@@ -21,22 +21,23 @@ const SYN_REPORT: u16 = 0;
 const KEY_ENTER: u16 = 28;
 const KEY_A: u16 = 30;
 const KEY_SPACE: u16 = 57;
-const KEY_F6: u16 = 64;
-const KEY_F7: u16 = 65;
+const KEY_F1: u16 = 59;
 const KEY_MAX: u16 = 0x2ff;
 const BUS_USB: u16 = 0x03;
 const UINPUT_MAX_NAME_SIZE: usize = 80;
 const KDE_COMPONENT: &str = "io.github.autolon.Autolon";
 const KDE_COMPONENT_PATH: &str = "/component/io_github_autolon_Autolon";
-const QT_KEY_F6: i32 = 16_777_269;
-const QT_KEY_F7: i32 = 16_777_270;
+const QT_KEY_F1: i32 = 16_777_264;
 const KDE_NO_AUTOLOADING: u32 = 0x4;
 
 pub fn support_summary() -> String {
     match crate::config::Config::load_or_create() {
         Ok(config) if config.global_autoclicker_enabled => match readable_event_device_count() {
             Ok(count) if count > 0 => {
-                "Global autoclicker enabled: direct F6/F7 override is ready".to_string()
+                format!(
+                    "Global autoclicker enabled: direct {}/{} override is ready",
+                    config.hotkeys.cycle, config.hotkeys.stop
+                )
             }
             Ok(_) if kde_global_shortcuts_available() => {
                 "Global hotkeys enabled through KDE; direct Chrome override permission is missing"
@@ -72,6 +73,10 @@ pub fn portal_global_shortcuts_version() -> Result<u32> {
 }
 
 pub fn kde_global_shortcuts_available() -> bool {
+    let key = crate::config::Config::load_or_create()
+        .ok()
+        .and_then(|config| qt_function_key(&config.hotkeys.cycle))
+        .unwrap_or(QT_KEY_F1 + 5);
     zbus::blocking::Connection::session()
         .and_then(|connection| {
             let proxy = zbus::blocking::Proxy::new(
@@ -90,8 +95,21 @@ pub fn kde_global_shortcuts_available() -> bool {
                 ]),
             )
         })
-        .map(|keys| keys.contains(&QT_KEY_F6))
+        .map(|keys| keys.contains(&key))
         .unwrap_or(false)
+}
+
+fn function_key_index(label: &str) -> Option<u8> {
+    let number = label.trim().strip_prefix('F')?.parse::<u8>().ok()?;
+    (1..=12).contains(&number).then_some(number)
+}
+
+fn linux_function_key(label: &str) -> Option<u16> {
+    function_key_index(label).map(|index| KEY_F1 + u16::from(index - 1))
+}
+
+fn qt_function_key(label: &str) -> Option<i32> {
+    function_key_index(label).map(|index| QT_KEY_F1 + i32::from(index - 1))
 }
 
 pub fn direct_keyboard_device_count() -> Result<usize> {
@@ -183,8 +201,11 @@ async fn run_kde_global_shortcuts_async(tx: Sender<Command>) -> Result<()> {
         "org.kde.KGlobalAccel",
     )
     .await?;
-    register_kde_shortcut(&accel, "cycle", "Cycle autoclicker", QT_KEY_F6).await?;
-    register_kde_shortcut(&accel, "emergency-stop", "Stop autoclicker", QT_KEY_F7).await?;
+    let config = crate::config::Config::load_or_create().unwrap_or_default();
+    let cycle_key = qt_function_key(&config.hotkeys.cycle).unwrap_or(QT_KEY_F1 + 5);
+    let stop_key = qt_function_key(&config.hotkeys.stop).unwrap_or(QT_KEY_F1 + 6);
+    register_kde_shortcut(&accel, "cycle", "Cycle autoclicker", cycle_key).await?;
+    register_kde_shortcut(&accel, "emergency-stop", "Stop autoclicker", stop_key).await?;
     accel
         .call::<_, _, ()>("activateGlobalShortcutContext", &(KDE_COMPONENT, "default"))
         .await?;
@@ -197,7 +218,10 @@ async fn run_kde_global_shortcuts_async(tx: Sender<Command>) -> Result<()> {
     )
     .await?;
     let mut pressed = component.receive_signal("globalShortcutPressed").await?;
-    eprintln!("autolon: global F6/F7 registered through KDE global shortcuts");
+    eprintln!(
+        "autolon: global {}/{} registered through KDE global shortcuts",
+        config.hotkeys.cycle, config.hotkeys.stop
+    );
 
     loop {
         if !crate::config::Config::load_or_create()
@@ -264,9 +288,12 @@ async fn run_portal_shortcuts_async(tx: Sender<Command>) -> Result<()> {
         .create_session(CreateSessionOptions::default())
         .await
         .context("failed to create global shortcuts portal session")?;
+    let config = crate::config::Config::load_or_create().unwrap_or_default();
     let shortcuts = [
-        NewShortcut::new("cycle", "Cycle Autoclick Speed").preferred_trigger(Some("F6")),
-        NewShortcut::new("stop", "Emergency Stop").preferred_trigger(Some("F7")),
+        NewShortcut::new("cycle", "Cycle Autoclick Speed")
+            .preferred_trigger(Some(config.hotkeys.cycle.as_str())),
+        NewShortcut::new("stop", "Emergency Stop")
+            .preferred_trigger(Some(config.hotkeys.stop.as_str())),
     ];
     let request = portal
         .bind_shortcuts(&session, &shortcuts, None, BindShortcutsOptions::default())
@@ -274,7 +301,7 @@ async fn run_portal_shortcuts_async(tx: Sender<Command>) -> Result<()> {
         .context("failed to bind F6/F7 through global shortcuts portal")?;
     let response = request.response()?;
     eprintln!(
-        "autolon: global F6/F7 registered through desktop shortcuts ({} shortcut(s))",
+        "autolon: global shortcuts registered through desktop shortcuts ({} shortcut(s))",
         response.shortcuts().len()
     );
 
@@ -316,12 +343,13 @@ fn run_keyboard_proxy(tx: Sender<Command>) -> Result<()> {
     let mut last_stop = Instant::now() - Duration::from_secs(1);
 
     loop {
-        if !crate::config::Config::load_or_create()
-            .map(|config| config.global_autoclicker_enabled)
-            .unwrap_or(false)
-        {
+        let config = crate::config::Config::load_or_create().unwrap_or_default();
+        if !config.global_autoclicker_enabled {
             return Ok(());
         }
+        let hotkey_debounce = Duration::from_millis(config.global_hotkey_debounce_ms);
+        let cycle_key = linux_function_key(&config.hotkeys.cycle).unwrap_or(KEY_F1 + 5);
+        let stop_key = linux_function_key(&config.hotkeys.stop).unwrap_or(KEY_F1 + 6);
 
         let mut fds: Vec<pollfd> = devices
             .iter()
@@ -343,15 +371,19 @@ fn run_keyboard_proxy(tx: Sender<Command>) -> Result<()> {
             }
             while let Some(event) = devices[idx].read_event()? {
                 match (event.type_, event.code, event.value) {
-                    (EV_KEY, KEY_F6, 1) if last_cycle.elapsed() > Duration::from_millis(160) => {
+                    (EV_KEY, code, 1)
+                        if code == cycle_key && last_cycle.elapsed() > hotkey_debounce =>
+                    {
                         last_cycle = Instant::now();
                         dispatch(&tx, CommandKind::Cycle);
                     }
-                    (EV_KEY, KEY_F7, 1) if last_stop.elapsed() > Duration::from_millis(160) => {
+                    (EV_KEY, code, 1)
+                        if code == stop_key && last_stop.elapsed() > hotkey_debounce =>
+                    {
                         last_stop = Instant::now();
                         dispatch(&tx, CommandKind::Stop);
                     }
-                    (EV_KEY, KEY_F6 | KEY_F7, _) => {}
+                    (EV_KEY, code, _) if code == cycle_key || code == stop_key => {}
                     (EV_KEY, code, value) => keyboard.key(code, value)?,
                     (EV_SYN, SYN_REPORT, _) => keyboard.sync()?,
                     _ => {}
@@ -498,7 +530,7 @@ fn linux_dev_major_minor(dev: u64) -> (u32, u32) {
 }
 
 fn looks_like_keyboard(fd: c_int) -> bool {
-    has_key(fd, KEY_A) && has_key(fd, KEY_ENTER) && has_key(fd, KEY_SPACE) && has_key(fd, KEY_F6)
+    has_key(fd, KEY_A) && has_key(fd, KEY_ENTER) && has_key(fd, KEY_SPACE)
 }
 
 fn has_key(fd: c_int, key: u16) -> bool {

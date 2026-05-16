@@ -190,6 +190,7 @@ fn run_daemon() -> Result<()> {
     let tx = clicker::start();
     let ipc_tx = tx.clone();
     crate::hotkeys::spawn(tx.clone());
+    crate::indicator::spawn(tx.clone());
     crate::tray::spawn();
     thread::spawn(move || {
         if let Err(err) = ipc::serve(ipc_tx) {

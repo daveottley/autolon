@@ -31,6 +31,7 @@ pub struct Status {
 pub enum Command {
     Cycle(Sender<Result<Status, String>>),
     Stop(Sender<Result<Status, String>>),
+    SubscribeStatus(Sender<Status>),
     SetSlotInterval {
         slot_id: u8,
         interval_ms: u64,
@@ -67,6 +68,7 @@ fn worker(rx: Receiver<Command>) {
         }
     };
     let mut state = ClickerState::Stopped;
+    let mut status_subscribers = Vec::new();
     let mut quit = false;
 
     while !quit {
@@ -89,10 +91,17 @@ fn worker(rx: Receiver<Command>) {
                     &mut state,
                     &config_path,
                     &mut quit,
+                    &mut status_subscribers,
                 );
                 if let Err(err) = reply {
                     eprintln!("autolon: command failed: {err:#}");
                 }
+                broadcast_status(
+                    &mut status_subscribers,
+                    &state,
+                    backend.name(),
+                    &config_path,
+                );
             }
             Err(RecvTimeoutError::Timeout) => {
                 if let ClickerState::Running { slot_id, .. } = state
@@ -115,6 +124,7 @@ fn handle_command(
     state: &mut ClickerState,
     config_path: &str,
     quit: &mut bool,
+    status_subscribers: &mut Vec<Sender<Status>>,
 ) -> Result<()> {
     match command {
         Command::Cycle(reply) => {
@@ -124,6 +134,9 @@ fn handle_command(
         Command::Stop(reply) => {
             *state = ClickerState::Stopped;
             send(reply, status(state, backend.name(), config_path));
+        }
+        Command::SubscribeStatus(subscriber) => {
+            status_subscribers.push(subscriber);
         }
         Command::SetSlotInterval {
             slot_id,
@@ -233,6 +246,18 @@ fn status(state: &ClickerState, backend: &str, config_path: &str) -> Result<Stat
 
 fn send(reply: Sender<Result<Status, String>>, status: Result<Status, String>) {
     let _ = reply.send(status);
+}
+
+fn broadcast_status(
+    subscribers: &mut Vec<Sender<Status>>,
+    state: &ClickerState,
+    backend: &str,
+    config_path: &str,
+) {
+    let Ok(status) = status(state, backend, config_path) else {
+        return;
+    };
+    subscribers.retain(|subscriber| subscriber.send(status.clone()).is_ok());
 }
 
 struct NoopBackend {

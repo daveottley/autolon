@@ -4,6 +4,7 @@ mod config;
 mod desktop;
 mod gui;
 mod hotkeys;
+mod indicator;
 mod input;
 mod ipc;
 mod tray;

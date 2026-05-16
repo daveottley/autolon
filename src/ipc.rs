@@ -7,7 +7,10 @@ use std::{
     os::unix::net::{UnixListener, UnixStream},
     path::PathBuf,
     process::{Command as ProcessCommand, Stdio},
-    sync::mpsc::{self, Sender},
+    sync::{
+        Arc, Mutex,
+        mpsc::{self, Sender},
+    },
     thread,
     time::Duration,
 };
@@ -20,6 +23,8 @@ pub enum Request {
     Stop,
     Reload,
     Quit,
+    SubscribeShutdown,
+    SubscribeStatus,
     SetSlotInterval { slot_id: u8, interval_ms: u64 },
     SetSlotEnabled { slot_id: u8, enabled: bool },
 }
@@ -30,6 +35,15 @@ pub struct Response {
     pub status: Option<Status>,
     pub error: Option<String>,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "event", rename_all = "kebab-case")]
+pub enum Event {
+    Shutdown,
+    Status { status: Status },
+}
+
+type ShutdownSubscribers = Arc<Mutex<Vec<UnixStream>>>;
 
 pub fn socket_path() -> Result<PathBuf> {
     if let Ok(runtime) = std::env::var("XDG_RUNTIME_DIR") {
@@ -45,12 +59,14 @@ pub fn serve(tx: Sender<Command>) -> Result<()> {
     }
     let listener =
         UnixListener::bind(&path).with_context(|| format!("failed to bind {}", path.display()))?;
+    let subscribers = ShutdownSubscribers::default();
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 let tx = tx.clone();
+                let subscribers = subscribers.clone();
                 thread::spawn(move || {
-                    if let Err(err) = handle_stream(stream, tx) {
+                    if let Err(err) = handle_stream(stream, tx, subscribers) {
                         eprintln!("autolon: IPC error: {err:#}");
                     }
                 });
@@ -59,6 +75,70 @@ pub fn serve(tx: Sender<Command>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+pub fn subscribe_shutdown() -> Result<()> {
+    let path = socket_path()?;
+    let mut stream = UnixStream::connect(&path)
+        .with_context(|| format!("autolon daemon is not running at {}", path.display()))?;
+    let line = serde_json::to_string(&Request::SubscribeShutdown)?;
+    writeln!(stream, "{line}")?;
+
+    let mut reader = BufReader::new(stream);
+    let mut response = String::new();
+    reader.read_line(&mut response)?;
+    let response: Response = serde_json::from_str(&response)?;
+    if !response.ok {
+        bail!(
+            "shutdown subscription rejected: {}",
+            response
+                .error
+                .unwrap_or_else(|| "unknown error".to_string())
+        );
+    }
+
+    let mut event = String::new();
+    reader.read_line(&mut event)?;
+    if event.is_empty() {
+        bail!("shutdown subscription ended before an event was received");
+    }
+    match serde_json::from_str(&event)? {
+        Event::Shutdown => Ok(()),
+        Event::Status { .. } => bail!("received status event while waiting for shutdown"),
+    }
+}
+
+pub fn subscribe_status(mut on_status: impl FnMut(Status) -> Result<()>) -> Result<()> {
+    let path = socket_path()?;
+    let mut stream = UnixStream::connect(&path)
+        .with_context(|| format!("autolon daemon is not running at {}", path.display()))?;
+    let line = serde_json::to_string(&Request::SubscribeStatus)?;
+    writeln!(stream, "{line}")?;
+
+    let mut reader = BufReader::new(stream);
+    let mut response = String::new();
+    reader.read_line(&mut response)?;
+    let response: Response = serde_json::from_str(&response)?;
+    if !response.ok {
+        bail!(
+            "status subscription rejected: {}",
+            response
+                .error
+                .unwrap_or_else(|| "unknown error".to_string())
+        );
+    }
+
+    loop {
+        let mut event = String::new();
+        reader.read_line(&mut event)?;
+        if event.is_empty() {
+            bail!("status subscription ended");
+        }
+        match serde_json::from_str(&event)? {
+            Event::Status { status } => on_status(status)?,
+            Event::Shutdown => return Ok(()),
+        }
+    }
 }
 
 pub fn send(request: Request) -> Result<Response> {
@@ -99,14 +179,72 @@ pub fn ensure_daemon() -> Result<()> {
     bail!("autolon daemon did not become ready");
 }
 
-fn handle_stream(mut stream: UnixStream, tx: Sender<Command>) -> Result<()> {
+fn handle_stream(
+    mut stream: UnixStream,
+    tx: Sender<Command>,
+    subscribers: ShutdownSubscribers,
+) -> Result<()> {
     let mut request = String::new();
     BufReader::new(stream.try_clone()?).read_line(&mut request)?;
     let request: Request = serde_json::from_str(&request)?;
+    if matches!(request, Request::SubscribeShutdown) {
+        return subscribe_stream(stream, subscribers);
+    }
+    if matches!(request, Request::SubscribeStatus) {
+        return subscribe_status_stream(stream, tx);
+    }
+    let is_quit = matches!(request, Request::Quit);
     let response = dispatch(request, tx)?;
     let line = serde_json::to_string(&response)?;
     writeln!(stream, "{line}")?;
+    if is_quit && response.ok {
+        notify_shutdown(&subscribers);
+    }
     Ok(())
+}
+
+fn subscribe_stream(mut stream: UnixStream, subscribers: ShutdownSubscribers) -> Result<()> {
+    let response = Response {
+        ok: true,
+        status: None,
+        error: None,
+    };
+    let line = serde_json::to_string(&response)?;
+    writeln!(stream, "{line}")?;
+    subscribers
+        .lock()
+        .expect("shutdown subscriber list poisoned")
+        .push(stream);
+    Ok(())
+}
+
+fn subscribe_status_stream(mut stream: UnixStream, tx: Sender<Command>) -> Result<()> {
+    let response = Response {
+        ok: true,
+        status: None,
+        error: None,
+    };
+    let line = serde_json::to_string(&response)?;
+    writeln!(stream, "{line}")?;
+
+    let (status_tx, status_rx) = mpsc::channel();
+    tx.send(Command::SubscribeStatus(status_tx))
+        .context("daemon command loop is unavailable")?;
+    for status in status_rx {
+        let line = serde_json::to_string(&Event::Status { status })?;
+        writeln!(stream, "{line}")?;
+    }
+    Ok(())
+}
+
+fn notify_shutdown(subscribers: &ShutdownSubscribers) {
+    let Ok(line) = serde_json::to_string(&Event::Shutdown) else {
+        return;
+    };
+    subscribers
+        .lock()
+        .expect("shutdown subscriber list poisoned")
+        .retain_mut(|stream| writeln!(stream, "{line}").is_ok());
 }
 
 fn dispatch(request: Request, tx: Sender<Command>) -> Result<Response> {
@@ -117,6 +255,8 @@ fn dispatch(request: Request, tx: Sender<Command>) -> Result<Response> {
         Request::Stop => Command::Stop(reply_tx),
         Request::Reload => Command::Reload(reply_tx),
         Request::Quit => Command::Quit(reply_tx),
+        Request::SubscribeShutdown => bail!("shutdown subscriptions are handled before dispatch"),
+        Request::SubscribeStatus => bail!("status subscriptions are handled before dispatch"),
         Request::SetSlotInterval {
             slot_id,
             interval_ms,

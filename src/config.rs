@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 
 pub const APP_ID: &str = "io.github.autolon.Autolon";
+pub const DEFAULT_GLOBAL_HOTKEY_DEBOUNCE_MS: u64 = 40;
+pub const MIN_GLOBAL_HOTKEY_DEBOUNCE_MS: u64 = 20;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -11,6 +13,10 @@ pub struct Config {
     pub clicker: ClickerConfig,
     #[serde(default)]
     pub global_autoclicker_enabled: bool,
+    #[serde(default = "default_global_hotkey_debounce_ms")]
+    pub global_hotkey_debounce_ms: u64,
+    #[serde(default)]
+    pub display_global_mouse_overlay: bool,
     pub backend: BackendPreference,
     pub slots: Slots,
 }
@@ -111,6 +117,12 @@ impl Config {
         if self.clicker.min_interval_ms < 1 {
             bail!("clicker.min_interval_ms must be at least 1");
         }
+        if self.global_hotkey_debounce_ms < MIN_GLOBAL_HOTKEY_DEBOUNCE_MS {
+            bail!(
+                "global_hotkey_debounce_ms must be at least {}",
+                MIN_GLOBAL_HOTKEY_DEBOUNCE_MS
+            );
+        }
         for slot_id in [1_u8, 2, 3] {
             let slot = self.slot(slot_id)?;
             if slot.interval_ms < self.clicker.min_interval_ms {
@@ -166,6 +178,8 @@ impl Default for Config {
                 min_interval_ms: 2,
             },
             global_autoclicker_enabled: true,
+            global_hotkey_debounce_ms: DEFAULT_GLOBAL_HOTKEY_DEBOUNCE_MS,
+            display_global_mouse_overlay: false,
             backend: BackendPreference::Auto,
             slots: Slots {
                 one: default_slow_slot(),
@@ -184,6 +198,10 @@ impl Config {
         if self.clicker.min_interval_ms != 2 {
             self.clicker.min_interval_ms = 2;
         }
+        if self.global_hotkey_debounce_ms < MIN_GLOBAL_HOTKEY_DEBOUNCE_MS {
+            self.global_hotkey_debounce_ms = MIN_GLOBAL_HOTKEY_DEBOUNCE_MS;
+            self.save()?;
+        }
 
         let old_two_slot_defaults = self.slots.one.name == "Fast" && self.slots.two.name == "Slow";
         let missing_new_names = self.slots.one.name != "Slow"
@@ -200,6 +218,10 @@ impl Config {
         }
         Ok(())
     }
+}
+
+fn default_global_hotkey_debounce_ms() -> u64 {
+    DEFAULT_GLOBAL_HOTKEY_DEBOUNCE_MS
 }
 
 fn default_fast_slot() -> SlotConfig {
