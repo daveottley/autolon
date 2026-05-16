@@ -207,7 +207,7 @@ fn default_fast_slot() -> SlotConfig {
         name: "Fast".to_string(),
         enabled: true,
         button: MouseButton::Left,
-        interval_ms: 6,
+        interval_ms: 10,
         press_duration_ms: 1,
     }
 }

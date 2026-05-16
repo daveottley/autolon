@@ -306,7 +306,7 @@ fn verify() -> Result<()> {
         &mut failures,
     );
     verify_slot(&config, 1, "Slow", true, 500, &mut failures);
-    verify_slot(&config, 2, "Fast", true, 6, &mut failures);
+    verify_slot(&config, 2, "Fast", true, 10, &mut failures);
     verify_slot(&config, 3, "User", false, 1000, &mut failures);
 
     let uinput_ok = std::fs::OpenOptions::new()

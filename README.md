@@ -65,7 +65,7 @@ autolon test-global-hotkey --seconds 20
 autolon cycle
 autolon stop
 autolon slot set 1 --interval-ms 500
-autolon slot set 2 --interval-ms 6
+autolon slot set 2 --interval-ms 10
 autolon slot set 3 --interval-ms 1000
 autolon gui
 ```

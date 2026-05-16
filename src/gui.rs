@@ -16,6 +16,7 @@ const CANVAS_HEIGHT: i32 = 360;
 const MAX_PIXELS: usize = 60_000;
 const DOT_SIZE: f64 = 5.0;
 const DOT_LIFETIME: Duration = Duration::from_secs(4);
+const ACTIVE_RING_RADIUS: f64 = 13.0;
 
 #[derive(Clone, Copy)]
 struct Dot {
@@ -130,6 +131,23 @@ fn build_ui(app: &Application) {
                 cr.rectangle(dot.x, dot.y, DOT_SIZE, DOT_SIZE);
                 let _ = cr.fill();
             }
+            let state_ref = state.borrow();
+            if let Some(slot_id) = state_ref.local_slot
+                && let Ok(slot) = state_ref.config.slot(slot_id)
+            {
+                let (red, green, blue) = active_slot_rgb(&slot.name);
+                let (x, y) = state_ref.pointer;
+                cr.set_line_width(2.0);
+                cr.set_source_rgba(red, green, blue, 0.72);
+                cr.arc(
+                    x.clamp(ACTIVE_RING_RADIUS, width as f64 - ACTIVE_RING_RADIUS),
+                    y.clamp(ACTIVE_RING_RADIUS, height as f64 - ACTIVE_RING_RADIUS),
+                    ACTIVE_RING_RADIUS,
+                    0.0,
+                    std::f64::consts::TAU,
+                );
+                let _ = cr.stroke();
+            }
         }
     });
 
@@ -156,24 +174,20 @@ fn build_ui(app: &Application) {
     });
     canvas.add_controller(click);
 
-    let key = EventControllerKey::new();
-    key.connect_key_pressed({
+    let capture_click = GestureClick::new();
+    capture_click.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    capture_click.connect_pressed({
         let state = state.clone();
-        let status = status.clone();
-        move |_, key, _, _| match key {
-            gdk::Key::F6 => {
-                cycle_local(&state, &status);
-                glib::Propagation::Stop
+        let canvas = canvas.clone();
+        move |gesture, _, _, _| {
+            if state.borrow().local_slot.is_some() {
+                let _ = canvas.grab_focus();
+                gesture.set_state(gtk4::EventSequenceState::Claimed);
             }
-            gdk::Key::F7 => {
-                state.borrow_mut().local_slot = None;
-                status.set_label("Stopped");
-                glib::Propagation::Stop
-            }
-            _ => glib::Propagation::Proceed,
         }
     });
-    canvas.add_controller(key);
+    root.add_controller(capture_click);
+
     root.append(&canvas);
 
     let actions = GtkBox::new(Orientation::Horizontal, 8);
@@ -185,6 +199,7 @@ fn build_ui(app: &Application) {
         let state = state.clone();
         let status = status.clone();
         let enable_global = enable_global.clone();
+        let canvas = canvas.clone();
         move |_| {
             let mut state_ref = state.borrow_mut();
             let new_enabled = !state_ref.config.global_autoclicker_enabled;
@@ -220,6 +235,7 @@ fn build_ui(app: &Application) {
                 }
                 Err(err) => status.set_label(&format!("Global toggle failed: {err:#}")),
             }
+            canvas.grab_focus();
         }
     });
 
@@ -264,6 +280,39 @@ fn build_ui(app: &Application) {
         .default_height(700)
         .child(&root)
         .build();
+    let key = EventControllerKey::new();
+    key.connect_key_pressed({
+        let state = state.clone();
+        let status = status.clone();
+        let canvas = canvas.clone();
+        move |_, key, _, _| match key {
+            gdk::Key::F6 => {
+                cycle_local(&state, &status);
+                canvas.queue_draw();
+                glib::Propagation::Stop
+            }
+            gdk::Key::F7 => {
+                state.borrow_mut().local_slot = None;
+                status.set_label("Stopped");
+                canvas.queue_draw();
+                glib::Propagation::Stop
+            }
+            _ => glib::Propagation::Proceed,
+        }
+    });
+    window.add_controller(key);
+    window.connect_is_active_notify({
+        let state = state.clone();
+        let status = status.clone();
+        let canvas = canvas.clone();
+        move |window| {
+            if !window.is_active() && state.borrow().local_slot.is_some() {
+                state.borrow_mut().local_slot = None;
+                status.set_label("Stopped");
+                canvas.queue_draw();
+            }
+        }
+    });
     window.set_icon_name(Some(crate::config::APP_ID));
     window.present();
     canvas.grab_focus();
@@ -404,6 +453,14 @@ fn push_pixel(state: &mut UiState, x: f64, y: f64) {
         created: now,
         color,
     });
+}
+
+fn active_slot_rgb(name: &str) -> (f64, f64, f64) {
+    match name {
+        "Slow" => (0.10, 0.45, 0.95),
+        "Fast" => (0.95, 0.55, 0.08),
+        _ => (0.45, 0.32, 0.95),
+    }
 }
 
 fn save_ui_config(config: &Config, status: &Label) {
