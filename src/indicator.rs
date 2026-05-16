@@ -47,6 +47,9 @@ pub const OBJECT_PATH: &str = "/io/github/autolon/Autolon/Indicator";
 
 const KWIN_BRIDGE_ID: &str = "autolon_indicator_cursor_bridge";
 const DRAW_INTERVAL: Duration = Duration::from_millis(16);
+const KWIN_BRIDGE_WATCHDOG_INTERVAL: Duration = Duration::from_secs(1);
+const KWIN_BRIDGE_RETRY_INTERVAL: Duration = Duration::from_secs(10);
+const KWIN_BRIDGE_STALE_AFTER: Duration = Duration::from_secs(3);
 const RING_RADIUS: f64 = 13.0;
 const RING_STROKE: f64 = 2.0;
 const LABEL_PADDING_X: i32 = 5;
@@ -122,6 +125,7 @@ pub fn spawn(tx: Sender<Command>) {
             eprintln!("autolon: indicator service unavailable before overlay setup: {err:#}");
         }
         reconcile_kwin_bridge(&state, &kwin_bridge_loaded);
+        spawn_kwin_bridge_watchdog(state.clone(), kwin_bridge_loaded.clone());
         subscribe_state(tx, state, kwin_bridge_loaded);
 
         loop {
@@ -236,6 +240,69 @@ fn reconcile_kwin_bridge(
     }
 }
 
+fn spawn_kwin_bridge_watchdog(
+    state: Arc<Mutex<IndicatorState>>,
+    kwin_bridge_loaded: Arc<Mutex<bool>>,
+) {
+    thread::spawn(move || {
+        let mut last_retry_unix_ms = 0;
+        loop {
+            thread::sleep(KWIN_BRIDGE_WATCHDOG_INTERVAL);
+            let now_unix_ms = now_unix_ms();
+            let Some((overlay_enabled, cursor_updated_unix_ms)) = state
+                .lock()
+                .ok()
+                .map(|state| (state.overlay_enabled, state.cursor_updated_unix_ms))
+            else {
+                continue;
+            };
+
+            if !overlay_enabled {
+                continue;
+            }
+
+            let loaded = kwin_bridge_loaded
+                .lock()
+                .map(|loaded| *loaded)
+                .unwrap_or(false);
+            if !loaded {
+                if now_unix_ms.saturating_sub(last_retry_unix_ms)
+                    >= KWIN_BRIDGE_RETRY_INTERVAL.as_millis() as u64
+                {
+                    last_retry_unix_ms = now_unix_ms;
+                    reconcile_kwin_bridge(&state, &kwin_bridge_loaded);
+                }
+                continue;
+            }
+
+            let stale = cursor_updated_unix_ms == 0
+                || now_unix_ms.saturating_sub(cursor_updated_unix_ms)
+                    > KWIN_BRIDGE_STALE_AFTER.as_millis() as u64;
+            if stale {
+                reload_stale_kwin_bridge(&kwin_bridge_loaded);
+            }
+        }
+    });
+}
+
+fn reload_stale_kwin_bridge(kwin_bridge_loaded: &Arc<Mutex<bool>>) {
+    let Ok(mut loaded) = kwin_bridge_loaded.lock() else {
+        return;
+    };
+    if !*loaded {
+        return;
+    }
+
+    eprintln!("autolon: KDE cursor overlay bridge heartbeat is stale; reloading bridge");
+    match load_kwin_cursor_bridge() {
+        Ok(()) => *loaded = true,
+        Err(err) => {
+            *loaded = false;
+            eprintln!("autolon: KDE cursor overlay bridge reload failed: {err:#}");
+        }
+    }
+}
+
 fn wait_for_dbus_service() -> Result<()> {
     let deadline = SystemTime::now() + Duration::from_secs(5);
     while SystemTime::now() < deadline {
@@ -282,7 +349,7 @@ fn load_kwin_cursor_bridge() -> Result<()> {
         .trim()
         .parse::<i32>()
         .context("KWin did not return a script id")?;
-    if script_id <= 0 {
+    if script_id < 0 {
         anyhow::bail!("KWin returned invalid script id {script_id}");
     }
 
@@ -339,8 +406,10 @@ const KWIN_CURSOR_BRIDGE_SCRIPT: &str = r#"print("autolon cursor overlay bridge 
 
 var autolonLastCursorX = null;
 var autolonLastCursorY = null;
+var autolonLastPublishUnixMs = 0;
 var autolonCursorPollTimer = null;
 var autolonCursorIntervalId = null;
+var autolonCursorHeartbeatMs = 500;
 
 function autolonReadCoordinate(value) {
     if (typeof value === "function") {
@@ -358,31 +427,45 @@ function autolonReadCursor() {
 }
 
 function autolonPublishCursor(force) {
-    var cursor = autolonReadCursor();
-    if (!cursor) {
-        return;
-    }
+    try {
+        var cursor = autolonReadCursor();
+        if (!cursor) {
+            return;
+        }
 
-    var x = autolonReadCoordinate(cursor.x);
-    var y = autolonReadCoordinate(cursor.y);
-    if (isNaN(x) || isNaN(y)) {
-        return;
-    }
+        var x = autolonReadCoordinate(cursor.x);
+        var y = autolonReadCoordinate(cursor.y);
+        if (isNaN(x) || isNaN(y)) {
+            return;
+        }
 
-    if (!force && x === autolonLastCursorX && y === autolonLastCursorY) {
-        return;
-    }
+        var now = Date.now ? Date.now() : new Date().getTime();
+        var changed = x !== autolonLastCursorX || y !== autolonLastCursorY;
+        var heartbeatDue = now - autolonLastPublishUnixMs >= autolonCursorHeartbeatMs;
+        if (!force && !changed && !heartbeatDue) {
+            return;
+        }
 
-    callDBus("io.github.autolon.Autolon.Indicator", "/io/github/autolon/Autolon/Indicator", "io.github.autolon.Autolon.Indicator", "UpdateCursor", x, y);
-    autolonLastCursorX = x;
-    autolonLastCursorY = y;
+        callDBus("io.github.autolon.Autolon.Indicator", "/io/github/autolon/Autolon/Indicator", "io.github.autolon.Autolon.Indicator", "UpdateCursor", x, y);
+        autolonLastCursorX = x;
+        autolonLastCursorY = y;
+        autolonLastPublishUnixMs = now;
+    } catch (err) {
+        print("autolon cursor overlay bridge publish failed: " + err);
+    }
 }
 
 var autolonCursorSignalHandler = function() {
     autolonPublishCursor(true);
 };
 
-workspace.cursorPosChanged.connect(autolonCursorSignalHandler);
+try {
+    if (workspace.cursorPosChanged && typeof workspace.cursorPosChanged.connect === "function") {
+        workspace.cursorPosChanged.connect(autolonCursorSignalHandler);
+    }
+} catch (err) {
+    print("autolon cursor overlay bridge signal unavailable: " + err);
+}
 
 if (typeof setInterval === "function") {
     autolonCursorIntervalId = setInterval(function() {
