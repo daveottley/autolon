@@ -12,6 +12,6 @@ pkgbase = autolon-bin
 	provides = autolon=0.1.4
 	conflicts = autolon
 	source_x86_64 = autolon-0.1.4-x86_64.tar.zst::https://github.com/daveottley/autolon/releases/download/v0.1.4/autolon-0.1.4-x86_64.tar.zst
-	sha256sums_x86_64 = SKIP
+	sha256sums_x86_64 = 96d7b0d9fb0020a559f453facb009d0e34e743fc91737b20db22c2fb5a33b297
 
 pkgname = autolon-bin

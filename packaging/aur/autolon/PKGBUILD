@@ -10,7 +10,7 @@ makedepends=('cargo' 'git')
 conflicts=('autolon-bin')
 install=autolon.install
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('205c569a52fd153e4af0379f4b694cecb0ba4c89b7756ae075bbb960ddc41695')
 
 prepare() {
   cd "$srcdir/$pkgname-$pkgver"
