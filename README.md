@@ -1,33 +1,62 @@
 # Autolon
 
-Autolon is a native Linux autoclicker and local input automation controller for Legends of IdleOn workflows.
+Autolon is an autoclicker and local automation controller for Legends of IdleOn on Linux.
 
-The v0 scope is intentionally narrow:
+It is built for a narrow, practical job: keep click automation local, visible, configurable, and easy to stop. Autolon does not read game memory, alter packets, bypass detection, or perform network automation.
 
-- native Rust executable named `autolon`
-- resident daemon with one owned click loop
-- CLI commands for status, cycle, stop, slot speed, autostart, and desktop icon installation
-- GTK settings window with a local click-speed test canvas
-- three autoclicker slots: Slow, Fast, User
-- cycle behavior: `Off -> Slow -> Fast -> User -> Off`
-- local canvas shortcuts always work while focused: `F6` cycles, `F7` stops
-- optional global shortcuts through KDE/portal first, with a direct `/dev/input` fallback: `F6` cycles, `F7` stops
-- Wayland-first pointer injection through `/dev/uinput`
-- X11 compatibility through XTest
+**Platform focus:** Wayland-only, KDE preferred.
 
-Autolon is for transparent local input automation only. It does not do game memory reads, packet manipulation, stealth behavior, anti-detection bypasses, or network automation. Verify whether automation is allowed for your game account and use case.
+Autolon is currently most comfortable on KDE Plasma Wayland. Some fallback paths exist, but users on other desktops should expect rougher behavior, especially for global hotkeys and pointer overlays.
 
-## Install
+## Features
 
-On Arch/CachyOS, build and install the package from this checkout:
+- Three speed slots: `Slow`, `Fast`, and `User`
+- Global cycle hotkey, default `F6`
+- Emergency stop hotkey, default `F7`
+- Adjustable hotkey debounce for fast repeated key presses
+- GTK settings window with a local test canvas
+- Optional global pointer overlay showing click state and speed
+- Color-coded click-speed indicator
+- System tray integration
+- User service support for a resident autoclicker daemon
+- Wayland pointer injection through `/dev/uinput`
+- Direct keyboard grab fallback for reliable global hotkeys when permissions allow it
+
+## Install From AUR
+
+On Arch Linux, CachyOS, or another Arch-based system with an AUR helper:
 
 ```sh
-./packaging/arch/build-local-package.sh
+yay -S autolon
 ```
 
-That installs an executable at `/usr/bin/autolon`, so you do not use `./autolon`. It also installs the KDE launcher entry, icon, metainfo, systemd user service, udev input rule, and `autolon-input` sysusers group definition. The install hook reloads udev, retriggers input devices, adds the installing user to `autolon-input`, and applies current-session ACLs when possible.
+This builds Autolon locally on your machine. It is the recommended package if you want the binary compiled for your system.
 
-After install:
+For the prebuilt package:
+
+```sh
+yay -S autolon-bin
+```
+
+Use either `autolon` or `autolon-bin`, not both. They conflict with each other intentionally because they install the same program.
+
+To switch from the prebuilt package to the locally built package:
+
+```sh
+yay -Rns autolon-bin
+yay -S autolon
+```
+
+To switch from the locally built package to the prebuilt package:
+
+```sh
+yay -Rns autolon
+yay -S autolon-bin
+```
+
+Avoid using `yay -Syu autolon` as a package-switch command. `-Syu` means "upgrade everything and install this target," so an AUR helper may show an `autolon-bin` update before resolving the package conflict. Remove the installed variant first for a clean, predictable switch.
+
+After install, refresh your shell and verify the setup:
 
 ```sh
 hash -r
@@ -36,17 +65,47 @@ autolon verify
 autolon gui
 ```
 
-If `direct_keyboard_grab_ready` is still `false`, open a new terminal or log out and back in once, then run `autolon verify` again.
+If `direct_keyboard_grab_ready` is still `false`, open a new terminal or log out and back in once, then run:
 
-## Build
+```sh
+autolon verify
+```
+
+## Install From This Repository
+
+From a fresh checkout on Arch or CachyOS:
+
+```sh
+./packaging/arch/build-local-package.sh
+```
+
+That installs:
+
+- `/usr/bin/autolon`
+- the desktop launcher
+- the application icon
+- metainfo metadata
+- the systemd user service
+- the udev input permission rule
+- the `autolon-input` sysusers group definition
+
+The package install hook reloads udev, retriggers input devices, adds the installing user to `autolon-input`, and applies current-session ACLs when possible.
+
+## Build For Development
 
 ```sh
 cargo build --release
 ```
 
-The binary is written to `target/release/autolon`. This build path is useful for development, but it does not install `autolon` onto your `PATH` or install Wayland input permissions.
+The development binary is written to:
 
-## Run
+```text
+target/release/autolon
+```
+
+This build path is useful while developing, but it does not install Autolon onto your `PATH` and does not install the Wayland input permission rules.
+
+## First Run
 
 Start the daemon:
 
@@ -54,45 +113,67 @@ Start the daemon:
 autolon daemon
 ```
 
-Control it from another terminal:
+Open the settings window:
+
+```sh
+autolon gui
+```
+
+Useful checks:
 
 ```sh
 autolon status
 autolon verify
 autolon permissions status
-autolon permissions install
-autolon test-global-hotkey --seconds 20
+```
+
+`autolon status` is read-only. It reports an existing daemon if one is running, or `state: daemon not running` if not.
+
+## Basic Controls
+
+Default hotkeys:
+
+```text
+F6  cycle autoclick speed
+F7  emergency stop
+```
+
+Default cycle order:
+
+```text
+Off -> Slow -> Fast -> User -> Off
+```
+
+The settings window lets you adjust slot speeds, enable or disable slots, tune debounce timing, test clicks on a local canvas, and enable global hotkeys.
+
+## Command Line Examples
+
+```sh
 autolon cycle
 autolon stop
 autolon slot set 1 --interval-ms 500
 autolon slot set 2 --interval-ms 10
 autolon slot set 3 --interval-ms 1000
-autolon gui
+autolon test-global-hotkey --seconds 20
 ```
 
-`autolon status` is read-only: it reports an existing daemon if one is running, or `state: daemon not running` if not. It does not start the daemon or create a tray icon.
-
-The default config is created at:
+The default config file is created here:
 
 ```text
 ~/.config/autolon/config.toml
 ```
 
-## Wayland Input Permissions
+## Wayland Permissions
 
-Wayland does not allow arbitrary apps to inject pointer events. Autolon v0 treats Wayland as first-class by using Linux virtual input through `/dev/uinput`.
+Wayland does not allow ordinary applications to inject pointer events into other applications. Autolon uses Linux virtual input through `/dev/uinput`.
 
-Global F6/F7 hotkeys use direct `/dev/input/event*` keyboard grabbing when permission is available, because that can consume F6 before Chrome receives it. KDE Global Shortcuts and the desktop GlobalShortcuts portal are fallback paths. The packaged udev rule grants direct input access to the active local desktop user with `uaccess` and also supports an `autolon-input` group fallback.
-
-For packaged installs, the package manager installs the included udev rule. When testing from a source checkout, install it once:
+For packaged installs, the udev rule is installed automatically. For source-tree testing, install it once:
 
 ```sh
 autolon permissions install
 ```
 
-The Arch package also runs `packaging/arch/autolon.install` at install/upgrade time. That script creates the `autolon-input` group, reloads udev rules, and retriggers input devices so Autolon should not need a runtime permission prompt.
-
-Or install it manually:
+Manual equivalent:
 
 ```sh
 sudo install -Dm644 packaging/linux/70-autolon-uinput.rules /usr/lib/udev/rules.d/70-autolon-uinput.rules
@@ -100,20 +181,22 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
-Log out and back in if the ACL does not refresh immediately. If your distro does not apply `uaccess` to input devices, create an `autolon-input` group and add your user to it:
+If permissions do not refresh immediately, log out and back in. If your distro does not apply `uaccess` to input devices, use the group fallback:
 
 ```sh
 sudo groupadd -r autolon-input 2>/dev/null || true
 sudo usermod -aG autolon-input "$USER"
 ```
 
+Then log out and back in.
+
+## Global Overlay
+
+Autolon includes an optional global mouse overlay that shows when autoclicking is active and displays the current speed.
+
+This feature is experimental and KDE-focused. It is disabled by default because global overlay behavior can vary across Wayland compositors. The packaged installs depend on `qt6-tools` for the KDE D-Bus bridge used by the overlay. The local test canvas always remains available for safe testing inside the settings window.
+
 ## Desktop Integration
-
-Install desktop files into a staging prefix:
-
-```sh
-autolon install-desktop-files --prefix /tmp/autolon-root/usr
-```
 
 User-level helpers:
 
@@ -124,12 +207,18 @@ autolon desktop-icon install
 autolon desktop-icon remove
 ```
 
-## Current Limitation
-
-KDE and portal global shortcuts can trigger Autolon, but they do not provide the same guarantee as a physical keyboard grab: applications such as Chrome may still observe F6. The direct keyboard-grab path is required for the Chrome override test. Check it with:
+Install desktop files into a staging prefix:
 
 ```sh
-autolon permissions status
+autolon install-desktop-files --prefix /tmp/autolon-root/usr
 ```
 
-`direct_keyboard_grab_ready` must be `true` before Autolon can reliably consume F6 ahead of Chrome. Global click injection also requires write access to `/dev/uinput`.
+## Safety Notes
+
+Autolon is meant for transparent local input automation. It should always be obvious when it is active, and `F7` should be treated as the first stop button to test.
+
+Before using automation with any game account, verify that your use case is allowed.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

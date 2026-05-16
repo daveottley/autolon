@@ -1,6 +1,9 @@
 use crate::{
     clicker::{ClickerState, Status},
-    config::{Config, MIN_GLOBAL_HOTKEY_DEBOUNCE_MS},
+    config::{
+        Config, MAX_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT, MIN_GLOBAL_HOTKEY_DEBOUNCE_MS,
+        MIN_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT,
+    },
     ipc,
 };
 use anyhow::Result;
@@ -523,19 +526,50 @@ fn append_global_overlay_setting(
     let checkbox = CheckButton::with_label("Display Global Mouse Overlay");
     checkbox.set_active(state.borrow().config.display_global_mouse_overlay);
 
+    let size_row = GtkBox::new(Orientation::Horizontal, 10);
+    let size_label = Label::new(Some("Speed text size"));
+    size_label.set_xalign(0.0);
+    let size = SpinButton::with_range(
+        MIN_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT as f64,
+        MAX_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT as f64,
+        1.0,
+    );
+    size.set_value(
+        state
+            .borrow()
+            .config
+            .global_mouse_overlay_font_size_pt
+            .into(),
+    );
+    let pt = Label::new(Some("pt"));
+    size_row.append(&size_label);
+    size_row.append(&size);
+    size_row.append(&pt);
+
     let warning = Label::new(None);
     warning.set_xalign(0.0);
     warning.set_wrap(true);
-    warning.set_markup("<span foreground=\"#dc2626\"><b>Warning:</b></span> This feature is only imlemented in the KDE destop environment. Using it on other system may cause unwanted visual artifacts or break your display system. USE WITH CAUTION!");
+    warning.set_markup("<span foreground=\"#dc2626\"><b>Warning:</b></span> This feature is only implemented in the KDE desktop environment. Using it on other systems may cause unwanted visual artifacts or break your display system. USE WITH CAUTION!");
     warning.set_visible(checkbox.is_active());
 
     group.append(&checkbox);
+    group.append(&size_row);
     group.append(&warning);
     root.append(&group);
 
+    let checkbox_state = state.clone();
+    let checkbox_pending_save = pending_save.clone();
     checkbox.connect_toggled(move |checkbox| {
-        state.borrow_mut().config.display_global_mouse_overlay = checkbox.is_active();
+        checkbox_state
+            .borrow_mut()
+            .config
+            .display_global_mouse_overlay = checkbox.is_active();
         warning.set_visible(checkbox.is_active());
+        schedule_config_save(&checkbox_state, &checkbox_pending_save);
+    });
+
+    size.connect_value_changed(move |size| {
+        state.borrow_mut().config.global_mouse_overlay_font_size_pt = size.value() as u32;
         schedule_config_save(&state, &pending_save);
     });
 }

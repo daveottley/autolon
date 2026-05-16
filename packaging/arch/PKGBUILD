@@ -1,11 +1,11 @@
 pkgname=autolon
-pkgver=0.1.6
+pkgver=0.1.7
 pkgrel=1
-pkgdesc='Native Linux autoclicker and local input automation controller - Wayland-only (KDE preferred)'
+pkgdesc='Autoclicker and automation controller for Legends of IdleOn - Wayland-only (KDE preferred)'
 arch=('x86_64')
 url='https://github.com/autolon/autolon'
 license=('MIT')
-depends=('gtk4' 'libxtst')
+depends=('acl' 'gtk4' 'libxtst' 'qt6-tools')
 makedepends=('cargo')
 install=autolon.install
 source=("$pkgname-$pkgver.tar.gz")

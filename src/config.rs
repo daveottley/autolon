@@ -5,6 +5,9 @@ use std::{fs, path::PathBuf};
 pub const APP_ID: &str = "io.github.autolon.Autolon";
 pub const DEFAULT_GLOBAL_HOTKEY_DEBOUNCE_MS: u64 = 40;
 pub const MIN_GLOBAL_HOTKEY_DEBOUNCE_MS: u64 = 20;
+pub const DEFAULT_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT: u32 = 12;
+pub const MIN_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT: u32 = 8;
+pub const MAX_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT: u32 = 24;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -17,6 +20,8 @@ pub struct Config {
     pub global_hotkey_debounce_ms: u64,
     #[serde(default)]
     pub display_global_mouse_overlay: bool,
+    #[serde(default = "default_global_mouse_overlay_font_size_pt")]
+    pub global_mouse_overlay_font_size_pt: u32,
     pub backend: BackendPreference,
     pub slots: Slots,
 }
@@ -123,6 +128,15 @@ impl Config {
                 MIN_GLOBAL_HOTKEY_DEBOUNCE_MS
             );
         }
+        if !(MIN_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT..=MAX_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT)
+            .contains(&self.global_mouse_overlay_font_size_pt)
+        {
+            bail!(
+                "global_mouse_overlay_font_size_pt must be between {} and {}",
+                MIN_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT,
+                MAX_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT
+            );
+        }
         for slot_id in [1_u8, 2, 3] {
             let slot = self.slot(slot_id)?;
             if slot.interval_ms < self.clicker.min_interval_ms {
@@ -180,6 +194,7 @@ impl Default for Config {
             global_autoclicker_enabled: true,
             global_hotkey_debounce_ms: DEFAULT_GLOBAL_HOTKEY_DEBOUNCE_MS,
             display_global_mouse_overlay: false,
+            global_mouse_overlay_font_size_pt: DEFAULT_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT,
             backend: BackendPreference::Auto,
             slots: Slots {
                 one: default_slow_slot(),
@@ -202,6 +217,13 @@ impl Config {
             self.global_hotkey_debounce_ms = MIN_GLOBAL_HOTKEY_DEBOUNCE_MS;
             self.save()?;
         }
+        if self.global_mouse_overlay_font_size_pt < MIN_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT {
+            self.global_mouse_overlay_font_size_pt = MIN_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT;
+            self.save()?;
+        } else if self.global_mouse_overlay_font_size_pt > MAX_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT {
+            self.global_mouse_overlay_font_size_pt = MAX_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT;
+            self.save()?;
+        }
 
         let old_two_slot_defaults = self.slots.one.name == "Fast" && self.slots.two.name == "Slow";
         let missing_new_names = self.slots.one.name != "Slow"
@@ -222,6 +244,10 @@ impl Config {
 
 fn default_global_hotkey_debounce_ms() -> u64 {
     DEFAULT_GLOBAL_HOTKEY_DEBOUNCE_MS
+}
+
+fn default_global_mouse_overlay_font_size_pt() -> u32 {
+    DEFAULT_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT
 }
 
 fn default_fast_slot() -> SlotConfig {

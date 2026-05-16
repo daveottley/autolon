@@ -1,8 +1,9 @@
 use crate::{
     clicker::{ClickerState, Command, Status},
-    config::Config,
+    config::{Config, DEFAULT_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT},
 };
 use anyhow::{Context, Result};
+use gtk4::cairo::{Context as CairoContext, FontSlant, FontWeight, Format, ImageSurface};
 use serde::Serialize;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, Region},
@@ -48,6 +49,8 @@ const KWIN_BRIDGE_ID: &str = "autolon_indicator_cursor_bridge";
 const DRAW_INTERVAL: Duration = Duration::from_millis(16);
 const RING_RADIUS: f64 = 13.0;
 const RING_STROKE: f64 = 2.0;
+const LABEL_PADDING_X: i32 = 5;
+const LABEL_PADDING_Y: i32 = 3;
 
 #[derive(Debug, Clone, Serialize)]
 struct IndicatorState {
@@ -56,6 +59,7 @@ struct IndicatorState {
     slot_name: String,
     interval_ms: u64,
     color: [f64; 3],
+    font_size_pt: u32,
     overlay_enabled: bool,
     cursor_x: i32,
     cursor_y: i32,
@@ -70,6 +74,7 @@ impl Default for IndicatorState {
             slot_name: String::new(),
             interval_ms: 0,
             color: [0.0, 0.0, 0.0],
+            font_size_pt: DEFAULT_GLOBAL_MOUSE_OVERLAY_FONT_SIZE_PT,
             overlay_enabled: false,
             cursor_x: 0,
             cursor_y: 0,
@@ -175,6 +180,7 @@ fn update_state(state: &Arc<Mutex<IndicatorState>>, status: Status) {
     let config = Config::load_or_create().unwrap_or_default();
     if let Ok(mut state_ref) = state.lock() {
         state_ref.overlay_enabled = config.display_global_mouse_overlay;
+        state_ref.font_size_pt = config.global_mouse_overlay_font_size_pt;
         match status.state {
             ClickerState::Running {
                 slot_id,
@@ -592,6 +598,8 @@ fn draw_indicator(canvas: &mut [u8], width: u32, height: u32, state: &IndicatorS
     let x = (state.cursor_x as f64).clamp(RING_RADIUS, width as f64 - RING_RADIUS - 1.0);
     let y = (state.cursor_y as f64).clamp(RING_RADIUS, height as f64 - RING_RADIUS - 1.0);
     let color = rgb(state.color);
+    let label = format!("{} ms", state.interval_ms);
+
     draw_ring(
         canvas,
         width,
@@ -603,16 +611,86 @@ fn draw_indicator(canvas: &mut [u8], width: u32, height: u32, state: &IndicatorS
         color,
         184,
     );
-    draw_text(
+    let _ = draw_label(
         canvas,
         width,
         height,
-        &state.interval_ms.to_string(),
-        (x + 16.0).round() as i32,
-        (y - 4.0).round() as i32,
+        &label,
+        x,
+        y,
         color,
-        220,
+        state.font_size_pt,
     );
+}
+
+fn bounded_label_position(position: i32, content_size: i32, canvas_size: i32, padding: i32) -> i32 {
+    let max_position = (canvas_size - content_size - padding - 1).max(padding);
+    position.max(padding).min(max_position)
+}
+
+fn draw_label(
+    canvas: &mut [u8],
+    width: u32,
+    height: u32,
+    label: &str,
+    cursor_x: f64,
+    cursor_y: f64,
+    color: [u8; 3],
+    font_size_pt: u32,
+) -> std::result::Result<(), gtk4::cairo::Error> {
+    let stride = (width * 4) as i32;
+    let surface = unsafe {
+        ImageSurface::create_for_data_unsafe(
+            canvas.as_mut_ptr(),
+            Format::ARgb32,
+            width as i32,
+            height as i32,
+            stride,
+        )?
+    };
+    let cr = CairoContext::new(&surface)?;
+    cr.select_font_face("Sans", FontSlant::Normal, FontWeight::Bold);
+    cr.set_font_size(font_size_pt as f64);
+
+    let extents = cr.text_extents(label)?;
+    let label_width = extents.width().ceil() as i32;
+    let label_height = extents.height().ceil() as i32;
+    let label_x = bounded_label_position(
+        (cursor_x + RING_RADIUS + RING_STROKE + 6.0).round() as i32,
+        label_width,
+        width as i32,
+        LABEL_PADDING_X,
+    );
+    let label_y = bounded_label_position(
+        (cursor_y - label_height as f64 / 2.0).round() as i32,
+        label_height,
+        height as i32,
+        LABEL_PADDING_Y,
+    );
+
+    cr.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+    cr.rectangle(
+        (label_x - LABEL_PADDING_X) as f64,
+        (label_y - LABEL_PADDING_Y) as f64,
+        (label_width + LABEL_PADDING_X * 2) as f64,
+        (label_height + LABEL_PADDING_Y * 2) as f64,
+    );
+    cr.fill()?;
+
+    cr.set_source_rgba(
+        color[0] as f64 / 255.0,
+        color[1] as f64 / 255.0,
+        color[2] as f64 / 255.0,
+        1.0,
+    );
+    cr.move_to(
+        label_x as f64 - extents.x_bearing(),
+        label_y as f64 - extents.y_bearing(),
+    );
+    cr.show_text(label)?;
+    surface.flush();
+
+    Ok(())
 }
 
 fn draw_ring(
@@ -652,56 +730,6 @@ fn draw_ring(
     }
 }
 
-fn draw_text(
-    canvas: &mut [u8],
-    width: u32,
-    height: u32,
-    text: &str,
-    x: i32,
-    y: i32,
-    color: [u8; 3],
-    alpha: u8,
-) {
-    let mut cursor = x;
-    for ch in text.chars() {
-        if let Some(glyph) = glyph(ch) {
-            draw_glyph(canvas, width, height, glyph, cursor, y, color, alpha);
-            cursor += 8;
-        }
-    }
-}
-
-fn draw_glyph(
-    canvas: &mut [u8],
-    width: u32,
-    height: u32,
-    glyph: [&str; 5],
-    x: i32,
-    y: i32,
-    color: [u8; 3],
-    alpha: u8,
-) {
-    for (row, bits) in glyph.iter().enumerate() {
-        for (col, bit) in bits.as_bytes().iter().enumerate() {
-            if *bit == b'1' {
-                let px = x + col as i32 * 2;
-                let py = y + row as i32 * 2;
-                for dy in 0..2 {
-                    for dx in 0..2 {
-                        if px + dx >= 0
-                            && py + dy >= 0
-                            && px + dx < width as i32
-                            && py + dy < height as i32
-                        {
-                            put_pixel(canvas, width, px + dx, py + dy, color, alpha);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 fn put_pixel(canvas: &mut [u8], width: u32, x: i32, y: i32, color: [u8; 3], alpha: u8) {
     let offset = ((y as u32 * width + x as u32) * 4) as usize;
     if offset + 3 >= canvas.len() {
@@ -714,22 +742,6 @@ fn put_pixel(canvas: &mut [u8], width: u32, x: i32, y: i32, color: [u8; 3], alph
     let b = color[2] as u32 * a / 255;
     let argb = (a << 24) | (r << 16) | (g << 8) | b;
     canvas[offset..offset + 4].copy_from_slice(&argb.to_le_bytes());
-}
-
-fn glyph(ch: char) -> Option<[&'static str; 5]> {
-    match ch {
-        '0' => Some(["111", "101", "101", "101", "111"]),
-        '1' => Some(["010", "110", "010", "010", "111"]),
-        '2' => Some(["111", "001", "111", "100", "111"]),
-        '3' => Some(["111", "001", "111", "001", "111"]),
-        '4' => Some(["101", "101", "111", "001", "001"]),
-        '5' => Some(["111", "100", "111", "001", "111"]),
-        '6' => Some(["111", "100", "111", "101", "111"]),
-        '7' => Some(["111", "001", "010", "010", "010"]),
-        '8' => Some(["111", "101", "111", "101", "111"]),
-        '9' => Some(["111", "101", "111", "001", "111"]),
-        _ => None,
-    }
 }
 
 fn rgb(color: [f64; 3]) -> [u8; 3] {
