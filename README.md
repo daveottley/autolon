@@ -8,8 +8,8 @@ The v0 scope is intentionally narrow:
 - resident daemon with one owned click loop
 - CLI commands for status, cycle, stop, slot speed, autostart, and desktop icon installation
 - GTK settings window with a local click-speed test canvas
-- three autoclicker slots: Fast, Slow, User
-- cycle behavior: `Off -> Fast -> Slow -> User -> Off`
+- three autoclicker slots: Slow, Fast, User
+- cycle behavior: `Off -> Slow -> Fast -> User -> Off`
 - local canvas shortcuts always work while focused: `F6` cycles, `F7` stops
 - optional global shortcuts through KDE/portal first, with a direct `/dev/input` fallback: `F6` cycles, `F7` stops
 - Wayland-first pointer injection through `/dev/uinput`
@@ -64,8 +64,8 @@ autolon permissions install
 autolon test-global-hotkey --seconds 20
 autolon cycle
 autolon stop
-autolon slot set 1 --interval-ms 6
-autolon slot set 2 --interval-ms 500
+autolon slot set 1 --interval-ms 500
+autolon slot set 2 --interval-ms 6
 autolon slot set 3 --interval-ms 1000
 autolon gui
 ```

@@ -39,10 +39,10 @@ pub enum BackendPreference {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Slots {
     #[serde(rename = "1")]
-    #[serde(default = "default_fast_slot")]
+    #[serde(default = "default_slow_slot")]
     pub one: SlotConfig,
     #[serde(rename = "2")]
-    #[serde(default = "default_slow_slot")]
+    #[serde(default = "default_fast_slot")]
     pub two: SlotConfig,
     #[serde(rename = "3")]
     #[serde(default = "default_user_slot")]
@@ -168,8 +168,8 @@ impl Default for Config {
             global_autoclicker_enabled: true,
             backend: BackendPreference::Auto,
             slots: Slots {
-                one: default_fast_slot(),
-                two: default_slow_slot(),
+                one: default_slow_slot(),
+                two: default_fast_slot(),
                 three: default_user_slot(),
             },
         }
@@ -185,13 +185,16 @@ impl Config {
             self.clicker.min_interval_ms = 2;
         }
 
-        let old_two_slot_defaults = self.slots.one.name == "Slow" && self.slots.two.name == "Fast";
-        let missing_new_names = self.slots.one.name != "Fast"
-            || self.slots.two.name != "Slow"
+        let old_two_slot_defaults = self.slots.one.name == "Fast" && self.slots.two.name == "Slow";
+        let missing_new_names = self.slots.one.name != "Slow"
+            || self.slots.two.name != "Fast"
             || self.slots.three.name != "User";
-        if old_two_slot_defaults || missing_new_names {
-            self.slots.one = default_fast_slot();
-            self.slots.two = default_slow_slot();
+        if old_two_slot_defaults {
+            std::mem::swap(&mut self.slots.one, &mut self.slots.two);
+            self.save()?;
+        } else if missing_new_names {
+            self.slots.one = default_slow_slot();
+            self.slots.two = default_fast_slot();
             self.slots.three = default_user_slot();
             self.save()?;
         }

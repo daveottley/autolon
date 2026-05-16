@@ -258,13 +258,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cycles_off_slot1_slot2_off_when_user_disabled() {
+    fn cycles_off_slow_fast_off_when_user_disabled() {
         let config = Config::default();
         let s0 = ClickerState::Stopped;
         let s1 = cycle_state(&config, &s0);
         assert!(matches!(s1, ClickerState::Running { slot_id: 1, .. }));
+        assert_eq!(config.slot(1).unwrap().name, "Slow");
         let s2 = cycle_state(&config, &s1);
         assert!(matches!(s2, ClickerState::Running { slot_id: 2, .. }));
+        assert_eq!(config.slot(2).unwrap().name, "Fast");
         let s3 = cycle_state(&config, &s2);
         assert!(matches!(s3, ClickerState::Stopped));
     }

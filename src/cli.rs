@@ -301,12 +301,12 @@ fn verify() -> Result<()> {
         &mut failures,
     );
     check(
-        "cycle order is Fast -> Slow -> User",
+        "cycle order is Slow -> Fast -> User",
         config.clicker.cycle_order == [1, 2, 3],
         &mut failures,
     );
-    verify_slot(&config, 1, "Fast", true, 6, &mut failures);
-    verify_slot(&config, 2, "Slow", true, 500, &mut failures);
+    verify_slot(&config, 1, "Slow", true, 500, &mut failures);
+    verify_slot(&config, 2, "Fast", true, 6, &mut failures);
     verify_slot(&config, 3, "User", false, 1000, &mut failures);
 
     let uinput_ok = std::fs::OpenOptions::new()
@@ -539,7 +539,7 @@ fn test_click(backend: &str) -> Result<()> {
 
 fn test_global_hotkey(seconds: u64) -> Result<()> {
     let config = Config::load_or_create()?;
-    let fast = config.slot(1)?.clone();
+    let slow = config.slot(1)?.clone();
     let was_running = ipc::send(ipc::Request::Status).is_ok();
 
     call(ipc::Request::Stop)?;
@@ -574,11 +574,11 @@ fn test_global_hotkey(seconds: u64) -> Result<()> {
     let _ = ipc::send(ipc::Request::Stop);
     let _ = ipc::send(ipc::Request::SetSlotInterval {
         slot_id: 1,
-        interval_ms: fast.interval_ms,
+        interval_ms: slow.interval_ms,
     });
     let _ = ipc::send(ipc::Request::SetSlotEnabled {
         slot_id: 1,
-        enabled: fast.enabled,
+        enabled: slow.enabled,
     });
     if !was_running {
         let _ = ipc::send(ipc::Request::Quit);
