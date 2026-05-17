@@ -17,12 +17,18 @@ use std::{
 
 const EV_SYN: u16 = 0x00;
 const EV_KEY: u16 = 0x01;
+const EV_REL: u16 = 0x02;
+const EV_ABS: u16 = 0x03;
 const SYN_REPORT: u16 = 0;
 const KEY_ENTER: u16 = 28;
 const KEY_A: u16 = 30;
 const KEY_SPACE: u16 = 57;
 const KEY_F1: u16 = 59;
 const KEY_MAX: u16 = 0x2ff;
+const REL_X: u16 = 0x00;
+const REL_Y: u16 = 0x01;
+const ABS_X: u16 = 0x00;
+const ABS_Y: u16 = 0x01;
 const BUS_USB: u16 = 0x03;
 const UINPUT_MAX_NAME_SIZE: usize = 80;
 const KDE_COMPONENT: &str = "io.github.autolon.Autolon";
@@ -530,23 +536,37 @@ fn linux_dev_major_minor(dev: u64) -> (u32, u32) {
 }
 
 fn looks_like_keyboard(fd: c_int) -> bool {
-    has_key(fd, KEY_A) && has_key(fd, KEY_ENTER) && has_key(fd, KEY_SPACE)
+    has_key(fd, KEY_A)
+        && has_key(fd, KEY_ENTER)
+        && has_key(fd, KEY_SPACE)
+        && !has_pointer_motion(fd)
 }
 
 fn has_key(fd: c_int, key: u16) -> bool {
-    let mut bits = [0_u8; 96];
+    has_event_code(fd, EV_KEY, key)
+}
+
+fn has_pointer_motion(fd: c_int) -> bool {
+    has_event_code(fd, EV_REL, REL_X)
+        || has_event_code(fd, EV_REL, REL_Y)
+        || has_event_code(fd, EV_ABS, ABS_X)
+        || has_event_code(fd, EV_ABS, ABS_Y)
+}
+
+fn has_event_code(fd: c_int, event_type: u16, code: u16) -> bool {
+    let mut bits = [0_u8; 128];
     let rc = unsafe {
         libc::ioctl(
             fd,
-            eviocgbit(EV_KEY as c_ulong, bits.len() as c_ulong),
+            eviocgbit(event_type as c_ulong, bits.len() as c_ulong),
             bits.as_mut_ptr(),
         )
     };
     if rc < 0 {
         return false;
     }
-    let byte = key as usize / 8;
-    let bit = key as usize % 8;
+    let byte = code as usize / 8;
+    let bit = code as usize % 8;
     bits.get(byte).is_some_and(|value| value & (1 << bit) != 0)
 }
 
